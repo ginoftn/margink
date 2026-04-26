@@ -17,7 +17,7 @@ final class ClaudeService {
         config.additionalPaths.append(
             NSString("~/.local/bin").expandingTildeInPath
         )
-        config.disallowedTools = ["Edit", "Write", "Bash"]
+        config.disallowedTools = AISettings.shared.disallowedTools
         // Prevent "nested session" error when launched from Claude Code
         config.environment["CLAUDECODE"] = ""
 
@@ -31,18 +31,20 @@ final class ClaudeService {
 
     /// First message on a document. Sends the file content + user message.
     func sendFirst(
+        filePath: String,
         fileContent: String,
         message: String
     ) async throws -> (response: String, sessionId: String?) {
         isLoading = true
         defer { isLoading = false }
 
+        let aiSettings = AISettings.shared
         var options = ClaudeCodeOptions()
-        options.systemPrompt = "You are a writing assistant integrated into Margink, a markdown editor. Help the user improve, reformulate, develop and rework their text. Be concise and direct."
-        options.maxTurns = 3
+        options.systemPrompt = aiSettings.systemPrompt
+        options.maxTurns = aiSettings.maxTurns
 
         let prompt = """
-        [Document content]
+        [Document: \(filePath)]
 
         \(fileContent)
 
@@ -62,6 +64,7 @@ final class ClaudeService {
     /// Follow-up message on an existing conversation.
     func sendFollowUp(
         sessionId: String,
+        filePath: String,
         message: String,
         fileContent: String?,
         fileChanged: Bool
@@ -72,7 +75,7 @@ final class ClaudeService {
         let prompt: String
         if fileChanged, let content = fileContent {
             prompt = """
-            [Document updated]
+            [Document updated: \(filePath)]
 
             \(content)
 
@@ -85,7 +88,7 @@ final class ClaudeService {
         }
 
         var options = ClaudeCodeOptions()
-        options.maxTurns = 3
+        options.maxTurns = AISettings.shared.maxTurns
 
         let result = try await client.resumeConversation(
             sessionId: sessionId,

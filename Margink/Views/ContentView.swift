@@ -9,12 +9,14 @@ struct ContentView: View {
 
     @State private var fileChangedSinceLastMessage = false
     @State private var saveTask: Task<Void, Never>?
+    @State private var isReloadingFromDisk = false
 
     @State private var claudeService: ClaudeService?
     @State private var serviceError: String?
     @State private var conversationStore = ConversationStore()
     @State private var fontSize: CGFloat = 14
     @State private var themeName = ThemeManager.shared.currentThemeName
+    @State private var fileWatcher: FileWatcher?
 
     var body: some View {
         Group {
@@ -40,25 +42,32 @@ struct ContentView: View {
                     )
                     .frame(minWidth: 350)
 
-                    ChatPane(
-                        messages: tab.messages,
-                        inputText: $tab.inputText,
-                        isLoading: claudeService?.isLoading ?? false,
-                        fontSize: fontSize,
-                        onSend: sendMessage
-                    )
-                    .frame(minWidth: 280, idealWidth: 350)
+                    if tab.isChatVisible {
+                        ChatPane(
+                            messages: tab.messages,
+                            inputText: $tab.inputText,
+                            isLoading: claudeService?.isLoading ?? false,
+                            fontSize: fontSize,
+                            onSend: sendMessage
+                        )
+                        .frame(minWidth: 280, idealWidth: 350)
+                    }
                 }
             }
         }
         .onAppear {
             initService()
+            startFileWatcher()
             guard !tab.isLoaded else { return }
             loadFile()
             loadPersistedMessages()
             tab.isLoaded = true
         }
+        .onDisappear {
+            fileWatcher?.stop()
+        }
         .onChange(of: tab.text) {
+            guard !isReloadingFromDisk else { return }
             fileChangedSinceLastMessage = true
             tab.isSaved = false
             scheduleSave()
@@ -74,6 +83,11 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .themeChanged)) { _ in
             themeName = ThemeManager.shared.currentThemeName
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleChat)) { _ in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                tab.isChatVisible.toggle()
+            }
         }
         .id(themeName)
     }
@@ -117,12 +131,14 @@ struct ContentView: View {
                 if let existingSessionId = conversationStore.loadSession(for: tab.filePath)?.sessionId {
                     result = try await service.sendFollowUp(
                         sessionId: existingSessionId,
+                        filePath: tab.filePath,
                         message: userMessage,
                         fileContent: currentText,
                         fileChanged: changed
                     )
                 } else {
                     result = try await service.sendFirst(
+                        filePath: tab.filePath,
                         fileContent: currentText,
                         message: userMessage
                     )
@@ -152,12 +168,34 @@ struct ContentView: View {
         }
     }
 
+    private func startFileWatcher() {
+        guard !tab.isUntitled else { return }
+        let watcher = FileWatcher(filePath: tab.filePath) { [self] in
+            reloadFromDisk()
+        }
+        watcher.start()
+        fileWatcher = watcher
+    }
+
+    private func reloadFromDisk() {
+        guard let newContent = try? String(contentsOfFile: tab.filePath, encoding: .utf8) else { return }
+        if newContent != tab.text {
+            viewLogger.info("[Margink] File changed externally, reloading: \(tab.fileName)")
+            isReloadingFromDisk = true
+            tab.text = newContent
+            tab.isSaved = true
+            isReloadingFromDisk = false
+        }
+    }
+
     private func scheduleSave() {
         saveTask?.cancel()
         saveTask = Task {
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled else { return }
+            fileWatcher?.pause()
             try? tab.text.write(toFile: tab.filePath, atomically: true, encoding: .utf8)
+            fileWatcher?.resume()
             await MainActor.run { tab.isSaved = true }
         }
     }

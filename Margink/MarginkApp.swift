@@ -7,6 +7,7 @@ extension Notification.Name {
     static let zoomReset = Notification.Name("margink.zoomReset")
     static let openFileRequest = Notification.Name("margink.openFileRequest")
     static let themeChanged = Notification.Name("margink.themeChanged")
+    static let toggleChat = Notification.Name("margink.toggleChat")
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -32,6 +33,7 @@ private func sendFindAction(_ action: NSTextFinder.Action) {
 struct MarginkApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var tabManager = TabManager()
+    @State private var showAISettings = false
 
     private let cliFilePath: String?
 
@@ -40,10 +42,17 @@ struct MarginkApp: App {
         var documentFile: String?
         var i = 1
         while i < args.count {
-            documentFile = args[i]
+            let arg = args[i]
+            if arg.hasPrefix("-") {
+                i += 2 // skip flag + its value
+                continue
+            }
+            if FileManager.default.fileExists(atPath: arg) {
+                documentFile = arg
+            }
             i += 1
         }
-        self.cliFilePath = documentFile?.isEmpty == false ? documentFile : nil
+        self.cliFilePath = documentFile
     }
 
     var body: some Scene {
@@ -55,11 +64,26 @@ struct MarginkApp: App {
                         tabManager.addTab(filePath: filePath)
                     }
                 }
+                .sheet(isPresented: $showAISettings) {
+                    AISettingsView()
+                }
         }
         .windowToolbarStyle(.unified(showsTitle: false))
         .windowResizability(.contentSize)
         .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("AI Settings...") {
+                    showAISettings = true
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
+
             CommandGroup(replacing: .newItem) {
+                Button("New") {
+                    tabManager.newUntitledTab()
+                }
+                .keyboardShortcut("n", modifiers: .command)
+
                 Button("Open...") {
                     let panel = NSOpenPanel()
                     panel.allowedContentTypes = [.plainText]
@@ -73,6 +97,16 @@ struct MarginkApp: App {
                     }
                 }
                 .keyboardShortcut("o", modifiers: .command)
+
+                Divider()
+
+                Button("Save As...") {
+                    if let tab = tabManager.selectedTab {
+                        tabManager.saveAs(tab: tab)
+                    }
+                }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+                .disabled(tabManager.isEmpty)
 
                 Divider()
 
@@ -128,7 +162,7 @@ struct MarginkApp: App {
                 .keyboardShortcut("?", modifiers: [.command, .shift])
             }
 
-            CommandMenu("View") {
+            CommandGroup(before: .toolbar) {
                 Button("Zoom In") {
                     NotificationCenter.default.post(name: .zoomIn, object: nil)
                 }
@@ -160,6 +194,13 @@ struct MarginkApp: App {
                         }
                     }
                 }
+
+                Divider()
+
+                Button("Toggle AI Chat") {
+                    NotificationCenter.default.post(name: .toggleChat, object: nil)
+                }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
             }
         }
     }
