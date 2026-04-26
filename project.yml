@@ -1,0 +1,32 @@
+name: Margink
+options:
+  bundleIdPrefix: com.ginoftn
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "16.0"
+  minimumXcodeGenVersion: "2.38"
+
+packages:
+  ClaudeCodeSDK:
+    url: https://github.com/jamesrochabrun/ClaudeCodeSDK
+    from: "1.0.0"
+
+targets:
+  Margink:
+    type: application
+    platform: macOS
+    sources: [Margink]
+    dependencies:
+      - package: ClaudeCodeSDK
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ginoftn.margink
+        PRODUCT_NAME: Margink
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: 1
+        INFOPLIST_KEY_CFBundleDisplayName: Margink
+        INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.productivity"
+        SWIFT_VERSION: "6.0"
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright 2026 Gino Fontana. All rights reserved."
